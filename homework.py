@@ -12,8 +12,7 @@ from dotenv import load_dotenv
 
 from exception import (UnexpectedHTTPStatusCodeError,
                        UnexpectedTypeError,
-                       UnexpectedStatus,
-                       TokenError,)
+                       UnexpectedStatus,)
 
 load_dotenv()
 
@@ -42,7 +41,6 @@ CUSTOM_EXCEPTIONS = (
     UnexpectedHTTPStatusCodeError,
     UnexpectedTypeError,
     UnexpectedStatus,
-    TokenError,
 )
 
 ERROR_CACHE = []
@@ -118,10 +116,7 @@ def parse_status(homework: dict) -> str:
 
 def check_tokens() -> bool:
     """Проверяет доступность переменных окружения."""
-    if all([PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID]):
-        return True
-    else:
-        raise TokenError('Переменные-токены недоступны в окружении')
+    return all([PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID])
 
 
 def exception_check(error: str) -> bool:

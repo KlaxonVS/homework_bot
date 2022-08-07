@@ -8,7 +8,3 @@ class UnexpectedTypeError(Exception):
 
 class UnexpectedStatus(Exception):
     pass
-
-
-class TokenError(Exception):
-    pass
