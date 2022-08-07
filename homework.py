@@ -57,14 +57,12 @@ HOMEWORK_STATUSES = {
 def send_message(bot: telegram.Bot,
                  message: str,) -> None:
     """Отправляет сообщение в Telegram чат."""
-
     bot.send_message(TELEGRAM_CHAT_ID, text=message)
     logger.info(f'Новое сообщение в чате: {message}')
 
 
 def i_am_working(update, context) -> None:
     """Реакция на команду /start и вывод команд."""
-
     buttons = [['/start', '/clear_error_cache']]
     keyboard = telegram.ReplyKeyboardMarkup(buttons, resize_keyboard=True)
     chat = update.effective_chat
@@ -73,8 +71,7 @@ def i_am_working(update, context) -> None:
 
 
 def get_api_answer(current_timestamp: int) -> requests:
-    """Получает ответ API и проверяет на корректность"""
-
+    """Получает ответ API и проверяет на корректность."""
     timestamp = current_timestamp
     params = {'from_date': timestamp}
     response = requests.get(ENDPOINT, headers=HEADERS, params=params)
@@ -90,8 +87,7 @@ def get_api_answer(current_timestamp: int) -> requests:
 
 
 def check_response(response: dict) -> list:
-    """Проверяет ответ API на корректность"""
-
+    """Проверяет ответ API на корректность."""
     if type(response['homeworks']) is list:
         return response['homeworks']
     else:
@@ -104,8 +100,7 @@ def check_response(response: dict) -> list:
 
 
 def parse_status(homework: dict) -> str:
-    """Подготавливает сообщение со статусом работы"""
-
+    """Подготавливает сообщение со статусом работы."""
     homework_name = homework['homework_name']
     homework_status = homework['status']
     if homework_status in HOMEWORK_STATUSES:
@@ -123,7 +118,6 @@ def parse_status(homework: dict) -> str:
 
 def check_tokens() -> bool:
     """Проверяет доступность переменных окружения."""
-    
     if all([PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID]):
         return True
     else:
@@ -132,7 +126,6 @@ def check_tokens() -> bool:
 
 def exception_check(error: str) -> bool:
     """Проверяет, что ошибка не повторяется и заносит ее в список."""
-
     if error not in ERROR_CACHE:
         ERROR_CACHE.append(error)
         return True
@@ -142,7 +135,6 @@ def exception_check(error: str) -> bool:
 
 def clear_error_cache(update, context) -> None:
     """Очищает список ошибок."""
-
     ERROR_CACHE.clear()
     chat = update.effective_chat
     context.bot.send_message(chat.id, 'Кэш очищен')
@@ -151,7 +143,6 @@ def clear_error_cache(update, context) -> None:
 
 def main():
     """Основная логика работы бота."""
-
     updater = Updater(token=TELEGRAM_TOKEN)
     updater.dispatcher.add_handler(CommandHandler('start', i_am_working))
     updater.dispatcher.add_handler(CommandHandler('clear_error_cache',
