@@ -10,6 +10,7 @@ import telegram
 from dotenv import load_dotenv
 
 from exception import (ErrorToSend,
+                       ErrorNotToSend,
                        SendMessageFailed,
                        UnexpectedHTTPStatusCodeError,
                        UnexpectedTypeError,)
@@ -166,6 +167,9 @@ def main():
             if current_error != error_cache:
                 error_cache = error_cache.copy()
                 send_message(bot, message)
+        except (Exception, ErrorNotToSend) as error:
+            message = f'{type(error).__name__}: {error}'
+            logger.error(message)
         finally:
             time.sleep(RETRY_TIME)
 
