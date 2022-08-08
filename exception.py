@@ -1,10 +1,18 @@
-class UnexpectedHTTPStatusCodeError(Exception):
+class ErrorToSend(Exception):
     pass
 
 
-class UnexpectedTypeError(Exception):
+class ErrorNotToSend(Exception):
     pass
 
 
-class UnexpectedStatus(Exception):
+class SendMessageFailed(ErrorNotToSend):
+    pass
+
+
+class UnexpectedHTTPStatusCodeError(ErrorToSend):
+    pass
+
+
+class UnexpectedTypeError(ErrorToSend):
     pass
