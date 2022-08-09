@@ -131,6 +131,7 @@ def parse_status(homework: dict) -> str:
         .format(homework_name=homework_name, verdict=verdict)
     )
 
+
 def check_tokens() -> bool:
     """Проверяет доступность переменных окружения."""
     return all([PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID])
