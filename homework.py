@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
+ERROR_TOKEN = '9Rr0я'
 
 RETRY_TIME = 600
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
@@ -46,8 +47,16 @@ def send_message(bot: telegram.Bot,
         bot.send_message(TELEGRAM_CHAT_ID, text=message)
         logger.info(f'Новое сообщение в чате: {message}')
     except Exception as error:
-        message = f'Не удалось отправить сообщение: {error}'
-        raise SendMessageFailed(message)
+        # При попытке добавить в main() try-except c отправкой ошибки вылез
+        # "main' is too complex". Добавил "токен" в конец сообщений с ошибкой
+        # и эту проверку сюда. Или я что-то не то придумал?
+        if message.endswith(ERROR_TOKEN):
+            logger.error(
+                'Попытка отправить сообщение об ошибке не удалась'
+                f'{type(error).__name__}: {error}'
+            )
+        error_message = f'Не удалось отправить сообщение: {error}'
+        raise SendMessageFailed(error_message)
 
 
 def get_api_answer(current_time: int) -> requests:
@@ -146,21 +155,22 @@ def main():
         message = 'Переменные-токены недоступны в окружении'
         logger.critical(message)
         sys.exit(message)
-    current_time = int(time.time())
-    time.sleep(RETRY_TIME)
-    # Значит у меня не получается понять как оно работает.
-    # sleep() приостанавливает исполнение кода после него на заданное время
-    # Если он в конце: функция запускается, фиксирует время, по этому же
-    # времени берётся from_date, и мы получаем пустой словарь -
-    # обновлений нет, finally sleep(). Прошли, в нашем случае, 10 минут
-    # - функция запускается. Снова фиксирует настоящее время и снова всё пусто.
-    # итд. Поставив sleep() после фиксации времени: функция запускается,
-    # фиксирует время, пауза 10 минут, время = from_date, которое
-    # получено 10 минут назад, и если в течении этого промежутка
-    # что-то появилось, проверяем, посылаем. Функция начинает новый круг,
-    # фиксирует новое время и ждет 10 минут. Или не так?
     while True:
         try:
+            current_time = int(time.time())
+            time.sleep(RETRY_TIME)
+            # Значит у меня не получается понять как оно работает.  sleep()
+            # приостанавливает исполнение кода после него на заданное время
+            # Если он в конце: функция запускается, фиксирует время, оно же
+            # берётся для from_date, и мы получаем пустой словарь,
+            # обновлений нет, finally sleep(). Прошли, в нашем случае, 10 минут
+            # - функция запускается. Снова фиксирует настоящее время
+            # и снова всё пусто итд. Поставив sleep() после фиксации времени:
+            # функция запускается, фиксирует время, пауза 10 минут,
+            # время = from_date, которое получено 10 минут назад,
+            # и если в течении этого промежутка что-то появилось,
+            # проверяем, посылаем. Функция начинает новый круг,
+            # фиксирует новое время и ждет 10 минут. Или не так?
             response = get_api_answer(current_time)
             homeworks = check_response(response)
             if homeworks:
@@ -180,19 +190,13 @@ def main():
             message = f'{type(error).__name__}: {error}'
             logger.error(message)
         except Exception as error:
-            message = f'{type(error).__name__}: {error}'
+            message = f'{type(error).__name__}: {error}. {ERROR_TOKEN}'
             current_report['message'] = message
             logger.error(message)
             if current_report != prev_report:
                 prev_report.clear()
                 prev_report = current_report.copy()
-                try:
-                    send_message(bot, message)
-                except Exception as error:
-                    logger.error(
-                        'Попытка отправить сообщение об ошибке не удалась'
-                        f'{type(error).__name__}: {error}'
-                    )
+                send_message(bot, message)
 
 
 if __name__ == '__main__':
