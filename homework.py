@@ -149,6 +149,7 @@ def check_tokens() -> bool:
 def main():
     """Основная логика работы бота."""
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
+    current_time = int(time.time())
     prev_report = {}
     current_report = {}
     if not check_tokens():
@@ -157,20 +158,6 @@ def main():
         sys.exit(message)
     while True:
         try:
-            current_time = int(time.time())
-            time.sleep(RETRY_TIME)
-            # Значит у меня не получается понять как оно работает.  sleep()
-            # приостанавливает исполнение кода после него на заданное время
-            # Если он в конце: функция запускается, фиксирует время, оно же
-            # берётся для from_date, и мы получаем пустой словарь,
-            # обновлений нет, finally sleep(). Прошли, в нашем случае, 10 минут
-            # - функция запускается. Снова фиксирует настоящее время
-            # и снова всё пусто итд. Поставив sleep() после фиксации времени:
-            # функция запускается, фиксирует время, пауза 10 минут,
-            # время = from_date, которое получено 10 минут назад,
-            # и если в течении этого промежутка что-то появилось,
-            # проверяем, посылаем. Функция начинает новый круг,
-            # фиксирует новое время и ждет 10 минут. Или не так?
             response = get_api_answer(current_time)
             homeworks = check_response(response)
             if homeworks:
@@ -197,6 +184,8 @@ def main():
                 prev_report.clear()
                 prev_report = current_report.copy()
                 send_message(bot, message)
+        finally:
+            time.sleep(RETRY_TIME)
 
 
 if __name__ == '__main__':
