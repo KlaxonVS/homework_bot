@@ -1,7 +1,3 @@
-class ErrorToSend(Exception):
-    pass
-
-
 class ErrorNotToSend(Exception):
     pass
 
@@ -10,9 +6,13 @@ class SendMessageFailed(ErrorNotToSend):
     pass
 
 
-class UnexpectedHTTPStatusCodeError(ErrorToSend):
+class EmptyResponse(ErrorNotToSend):
     pass
 
 
-class UnexpectedTypeError(ErrorToSend):
+class UnexpectedHTTPStatusCodeError(Exception):
+    pass
+
+
+class UnexpectedTypeError(Exception):
     pass

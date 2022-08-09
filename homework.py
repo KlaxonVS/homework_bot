@@ -9,11 +9,10 @@ import telegram
 
 from dotenv import load_dotenv
 
-from exception import (ErrorToSend,
+from exception import (EmptyResponse,
                        ErrorNotToSend,
                        SendMessageFailed,
-                       UnexpectedHTTPStatusCodeError,
-                       UnexpectedTypeError,)
+                       UnexpectedHTTPStatusCodeError,)
 
 load_dotenv()
 
@@ -27,10 +26,9 @@ logger = logging.getLogger(__name__)
 PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
-CURRENT_TIME = int(time.time())
 
 RETRY_TIME = 600
-ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/1'
+ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
 
 VERDICTS = {
@@ -49,14 +47,13 @@ def send_message(bot: telegram.Bot,
         logger.info(f'Новое сообщение в чате: {message}')
     except Exception as error:
         message = f'Не удалось отправить сообщение: {error}'
-        logger.error(message)
         raise SendMessageFailed(message)
 
 
-def get_api_answer(set_timestamp: int) -> requests:
+def get_api_answer(current_time: int) -> requests:
     """Получает ответ API и проверяет на корректность."""
     logger.info('Попытка запроса к API')
-    timestamp = set_timestamp or CURRENT_TIME
+    timestamp = current_time or time.time()
     params = {'from_date': timestamp}
     api_params = {
         'url': ENDPOINT,
@@ -80,37 +77,45 @@ def get_api_answer(set_timestamp: int) -> requests:
         message = (f'{error}'', переданные переменные:\n'
                    '{url}\nAuthorization: {headers[Authorization]:.5}\n'
                    '{params}')
-        logger.error(message)
         raise ConnectionError(message)
 
 
 def check_response(response: dict) -> list:
     """Проверяет ответ API на корректность."""
     logger.info('Проверка ответа API на корректность - содержит list')
-    if isinstance(response['homeworks'], list):
-        logger.info('Проверка пройдена')
-        return response['homeworks']
+    if isinstance(response, dict)\
+            and isinstance(response.get('homeworks'), list):
+        if 'homeworks' or 'current_date' not in response:
+            logger.info('Проверка пройдена')
+            return response.get('homeworks')
+        else:
+            message = ('Ответ не содержит домашних работ.'
+                       f'Пришло: {response}')
+            raise EmptyResponse(message)
     else:
         message = (
-            'От сервера не пришли необходимые данные в формате list.'
-            f'Пришел {type(response["homeworks"])}'
+            'От сервера не пришли необходимые данные в формате dict и list.'
+            f'Пришел {response}'
         )
-        logger.error(message)
-        raise UnexpectedTypeError(message)
+        raise TypeError(message)
 
 
 def parse_status(homework: dict) -> str:
     """Подготавливает сообщение со статусом работы."""
-    homework_name = homework.get('homework_name')
-    homework_status = homework.get('status')
-    try:
-        verdict = VERDICTS[homework_status]
-        return f'Изменился статус проверки работы "{homework_name}". {verdict}'
-    except KeyError:
-        message = ('Пришел ответ с неизвестным статусом работы '
-                   f'или он отсутствует:\nИмя работы: "{homework_name}"\n'
-                   f'Статус работы: {homework_status}')
-        logger.warning(message)
+    if homework.get('homework_name') or (homework.get('status') in VERDICTS):
+        homework_name = homework.get('homework_name')
+        verdict = VERDICTS[homework.get('status')]
+        return (
+            # pytest не принемает предложенную строку через .format
+            f'Изменился статус проверки работы "{homework_name}". {verdict}'
+        )
+    else:
+        homework_name = homework.get('homework_name')
+        status = homework.get('status')
+        message = (
+            'Пришел ответ с неизвестным, отсутствующем статусом работы или '
+            f'именем\nИмя работы: "{homework_name}"\nСтатус работы: {status}'
+        )
         raise KeyError(message)
 
 
@@ -121,32 +126,25 @@ def check_tokens() -> bool:
 
 def main():
     """Основная логика работы бота."""
-    error_cache = {}
     if not check_tokens():
         message = 'Переменные-токены недоступны в окружении'
         logger.critical(message)
         sys.exit(message)
-    else:
+    while True:
         bot = telegram.Bot(token=TELEGRAM_TOKEN)
         prev_report = {}
+        current_report = {}
+        prev_error = {}
+        current_error = {}
         try:
-            # Получается что в get_api_answer для получения результата,
-            # а не только проверки, мы должны задавать не настоящее время,
-            # ведь придёд пустой список, а задать дату
-            # от которой прислать обновление и так как у нас запрос идет через
-            # промежуток RETRY_TIME, то его я и выбрал
-            response = get_api_answer(CURRENT_TIME - RETRY_TIME)
+            current_time = int(time.time())
+            time.sleep(RETRY_TIME)
+            response = get_api_answer(current_time)
             homeworks = check_response(response)
             if homeworks:
                 homework = homeworks[0]
-                current_report = {}
-                current_report.update(
-                    {homework.get('date_updated'):
-                     [homework.get('homework_name'), homework.get('status')]}
-                )
-                # Имя и статус могут повторяться, а дата обновления нет,
-                # потому её добавил, ведь это самый уникальный показатель
-                # Особенно, если дату задать как 0 или давнюю дату
+                current_report[homework.get('homework_name')]\
+                    = homework.get('status')
                 if current_report != prev_report:
                     logger.debug('Получен новый статус')
                     prev_report.clear()
@@ -157,21 +155,17 @@ def main():
                     logger.debug('Обновлений нет')
             else:
                 logger.debug('Обновлений нет')
-        except ErrorToSend as error:
+        except ErrorNotToSend as error:
             message = f'{type(error).__name__}: {error}'
-            current_error = {}
-            current_error.update(
-                {'message': message}
-            )
             logger.error(message)
-            if current_error != error_cache:
-                error_cache = error_cache.copy()
+        except Exception as error:
+            message = f'{type(error).__name__}: {error}'
+            current_error['message'] = message
+            logger.error(message)
+            if current_error != prev_error:
+                prev_error.clear()
+                prev_error = current_error.copy()
                 send_message(bot, message)
-        except (Exception, ErrorNotToSend) as error:
-            message = f'{type(error).__name__}: {error}'
-            logger.error(message)
-        finally:
-            time.sleep(RETRY_TIME)
 
 
 if __name__ == '__main__':
