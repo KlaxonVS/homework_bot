@@ -83,41 +83,53 @@ def get_api_answer(current_time: int) -> requests:
 def check_response(response: dict) -> list:
     """Проверяет ответ API на корректность."""
     logger.info('Проверка ответа API на корректность - содержит list')
-    if isinstance(response, dict)\
-            and isinstance(response.get('homeworks'), list):
-        if 'homeworks' or 'current_date' not in response:
-            logger.info('Проверка пройдена')
-            return response.get('homeworks')
-        else:
-            message = ('Ответ не содержит домашних работ.'
-                       f'Пришло: {response}')
+    if isinstance(response, dict):
+        if isinstance(response.get('homeworks'), list):
+            if 'homeworks' or 'current_date' not in response:
+                logger.info('Проверка пройдена')
+                return response.get('homeworks')
+            else:
+                message = ('Ответ не содержит домашних работ.'
+                           f'Пришло: {response}')
             raise EmptyResponse(message)
+        else:
+            received_data = response.get('homeworks')
+            message = (
+                'От сервера не пришли необходимые данные в формате list.'
+                f'Пришел {type(received_data)}'
+            )
+            raise TypeError(message)
     else:
         message = (
-            'От сервера не пришли необходимые данные в формате dict и list.'
-            f'Пришел {response}'
+            'От сервера не пришли необходимые данные в формате dict.'
+            f'Пришел {type(response)}'
         )
         raise TypeError(message)
 
 
 def parse_status(homework: dict) -> str:
     """Подготавливает сообщение со статусом работы."""
-    if homework.get('homework_name') or (homework.get('status') in VERDICTS):
-        homework_name = homework.get('homework_name')
-        verdict = VERDICTS[homework.get('status')]
-        return (
-            # pytest не принемает предложенную строку через .format
-            f'Изменился статус проверки работы "{homework_name}". {verdict}'
-        )
-    else:
-        homework_name = homework.get('homework_name')
-        status = homework.get('status')
+    homework_name = homework.get('homework_name')
+    status = homework.get('status')
+    if not homework_name:
         message = (
-            'Пришел ответ с неизвестным, отсутствующем статусом работы или '
-            f'именем\nИмя работы: "{homework_name}"\nСтатус работы: {status}'
+            'Пришел ответ с отсутствующем именем.\n'
+            f'Имя работы: "{homework_name}"'
         )
         raise KeyError(message)
-
+    if status not in VERDICTS:
+        message = (
+            'Пришел ответ с неизвестным, отсутствующем статусом работы\n'
+            f'Статус работы: {status}'
+        )
+        raise NameError(message)
+    verdict = VERDICTS[status]
+    return (
+        # pytest раза с десятого перестал ругаться,
+        # а в чем был смысл применения format, а не f-string?
+        'Изменился статус проверки работы "{homework_name}". {verdict}'
+        .format(homework_name=homework_name, verdict=verdict)
+    )
 
 def check_tokens() -> bool:
     """Проверяет доступность переменных окружения."""
@@ -126,30 +138,38 @@ def check_tokens() -> bool:
 
 def main():
     """Основная логика работы бота."""
+    bot = telegram.Bot(token=TELEGRAM_TOKEN)
+    prev_report = {}
+    current_report = {}
     if not check_tokens():
         message = 'Переменные-токены недоступны в окружении'
         logger.critical(message)
         sys.exit(message)
+    current_time = int(time.time())
+    time.sleep(RETRY_TIME)
+    # Значит у меня не получается понять как оно работает.
+    # sleep() приостанавливает исполнение кода после него на заданное время
+    # Если он в конце: функция запускается, фиксирует время, по этому же
+    # времени берётся from_date, и мы получаем пустой словарь -
+    # обновлений нет, finally sleep(). Прошли, в нашем случае, 10 минут
+    # - функция запускается. Снова фиксирует настоящее время и снова всё пусто.
+    # итд. Поставив sleep() после фиксации времени: функция запускается,
+    # фиксирует время, пауза 10 минут, время = from_date, которое
+    # получено 10 минут назад, и если в течении этого промежутка
+    # что-то появилось, проверяем, посылаем. Функция начинает новый круг,
+    # фиксирует новое время и ждет 10 минут. Или не так?
     while True:
-        bot = telegram.Bot(token=TELEGRAM_TOKEN)
-        prev_report = {}
-        current_report = {}
-        prev_error = {}
-        current_error = {}
         try:
-            current_time = int(time.time())
-            time.sleep(RETRY_TIME)
             response = get_api_answer(current_time)
             homeworks = check_response(response)
             if homeworks:
                 homework = homeworks[0]
-                current_report[homework.get('homework_name')]\
-                    = homework.get('status')
+                message = parse_status(homework)
+                current_report['message'] = message
                 if current_report != prev_report:
                     logger.debug('Получен новый статус')
                     prev_report.clear()
                     prev_report = current_report.copy()
-                    message = parse_status(homework)
                     send_message(bot, message)
                 else:
                     logger.debug('Обновлений нет')
@@ -160,12 +180,18 @@ def main():
             logger.error(message)
         except Exception as error:
             message = f'{type(error).__name__}: {error}'
-            current_error['message'] = message
+            current_report['message'] = message
             logger.error(message)
-            if current_error != prev_error:
-                prev_error.clear()
-                prev_error = current_error.copy()
-                send_message(bot, message)
+            if current_report != prev_report:
+                prev_report.clear()
+                prev_report = current_report.copy()
+                try:
+                    send_message(bot, message)
+                except Exception as error:
+                    logger.error(
+                        'Попытка отправить сообщение об ошибке не удалась'
+                        f'{type(error).__name__}: {error}'
+                    )
 
 
 if __name__ == '__main__':
