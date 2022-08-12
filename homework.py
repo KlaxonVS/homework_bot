@@ -46,17 +46,14 @@ def send_message(bot: telegram.Bot,
     try:
         bot.send_message(TELEGRAM_CHAT_ID, text=message)
         logger.info(f'Новое сообщение в чате: {message}')
+    except telegram.TelegramError as error:
+        logger.error(
+            'Попытка отправить сообщение об ошибке не удалась'
+            f'{type(error).__name__}: {error}'
+        )
     except Exception as error:
-        # При попытке добавить в main() try-except c отправкой ошибки вылез
-        # "main' is too complex". Добавил "токен" в конец сообщений с ошибкой
-        # и эту проверку сюда. Или я что-то не то придумал?
-        if message.endswith(ERROR_TOKEN):
-            logger.error(
-                'Попытка отправить сообщение об ошибке не удалась'
-                f'{type(error).__name__}: {error}'
-            )
-        error_message = f'Не удалось отправить сообщение: {error}'
-        raise SendMessageFailed(error_message)
+        message = f'Не удалось отправить сообщение: {error}'
+        raise SendMessageFailed(message)
 
 
 def get_api_answer(current_time: int) -> requests:
@@ -92,28 +89,25 @@ def get_api_answer(current_time: int) -> requests:
 def check_response(response: dict) -> list:
     """Проверяет ответ API на корректность."""
     logger.info('Проверка ответа API на корректность - содержит list')
-    if isinstance(response, dict):
-        if isinstance(response.get('homeworks'), list):
-            if 'homeworks' or 'current_date' not in response:
-                logger.info('Проверка пройдена')
-                return response.get('homeworks')
-            else:
-                message = ('Ответ не содержит домашних работ.'
-                           f'Пришло: {response}')
-            raise EmptyResponse(message)
-        else:
-            received_data = response.get('homeworks')
-            message = (
-                'От сервера не пришли необходимые данные в формате list.'
-                f'Пришел {type(received_data)}'
-            )
-            raise TypeError(message)
-    else:
+    if not isinstance(response, dict):
         message = (
             'От сервера не пришли необходимые данные в формате dict.'
             f'Пришел {type(response)}'
         )
         raise TypeError(message)
+    if not isinstance(response.get('homeworks'), list):
+        received_data = response.get('homeworks')
+        message = (
+            'От сервера не пришли необходимые данные в формате list.'
+            f'Пришел {type(received_data)}'
+        )
+        raise TypeError(message)
+    if 'homeworks' not in response:
+        message = ('Ответ не содержит домашних работ.'
+                   f'Пришло: {response}')
+        raise EmptyResponse(message)
+    logger.info('Проверка пройдена')
+    return response.get('homeworks')
 
 
 def parse_status(homework: dict) -> str:
@@ -132,12 +126,9 @@ def parse_status(homework: dict) -> str:
             f'Статус работы: {status}'
         )
         raise NameError(message)
-    verdict = VERDICTS[status]
     return (
-        # pytest раза с десятого перестал ругаться,
-        # а в чем был смысл применения format, а не f-string?
         'Изменился статус проверки работы "{homework_name}". {verdict}'
-        .format(homework_name=homework_name, verdict=verdict)
+        .format(homework_name=homework_name, verdict=VERDICTS[status])
     )
 
 
@@ -148,7 +139,6 @@ def check_tokens() -> bool:
 
 def main():
     """Основная логика работы бота."""
-    bot = telegram.Bot(token=TELEGRAM_TOKEN)
     current_time = int(time.time())
     prev_report = {}
     current_report = {}
@@ -156,6 +146,7 @@ def main():
         message = 'Переменные-токены недоступны в окружении'
         logger.critical(message)
         sys.exit(message)
+    bot = telegram.Bot(token=TELEGRAM_TOKEN)
     while True:
         try:
             response = get_api_answer(current_time)
@@ -164,13 +155,13 @@ def main():
                 homework = homeworks[0]
                 message = parse_status(homework)
                 current_report['message'] = message
-                if current_report != prev_report:
-                    logger.debug('Получен новый статус')
-                    prev_report.clear()
-                    prev_report = current_report.copy()
-                    send_message(bot, message)
-                else:
-                    logger.debug('Обновлений нет')
+            else:
+                logger.debug('Обновлений нет')
+            if current_report != prev_report:
+                logger.debug('Получен новый статус')
+                prev_report = current_report.copy()
+                current_time = int(time.time())
+                send_message(bot, message)
             else:
                 logger.debug('Обновлений нет')
         except ErrorNotToSend as error:
@@ -181,7 +172,6 @@ def main():
             current_report['message'] = message
             logger.error(message)
             if current_report != prev_report:
-                prev_report.clear()
                 prev_report = current_report.copy()
                 send_message(bot, message)
         finally:
