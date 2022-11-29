@@ -1,2 +1,3 @@
 # homework_bot
-python telegram bot
+### Технологии:
+``[python-telegram-bot, API]``
